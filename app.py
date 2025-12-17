@@ -3,72 +3,90 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 from PIL import Image
-import numpy as np
 import tempfile
 import timm
+from pathlib import Path
+
 from recommendation import cnv, dme, drusen, normal
 
-# Page config
+
+# -------------------- PAGE CONFIG --------------------
 st.set_page_config(
     page_title="OCT Retinal Analysis Platform",
     page_icon="👁️",
     layout="wide"
 )
 
-# Global variables for model and transforms
-model = None
-transform = None
-device = None
-class_names = ['CNV', 'DME', 'DRUSEN', 'NORMAL']
 
+# -------------------- CONSTANTS --------------------
+CLASS_NAMES = ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR / "eye_disease_model_pytorch.pth"
+
+
+# -------------------- MODEL LOADER --------------------
 @st.cache_resource
 def load_model_and_transforms():
-    """Load PyTorch model and preprocessing transforms"""
-    global model, transform, device
-    
-    # Set device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Load model
-    model = timm.create_model('mobilenetv3_large_100', pretrained=False, num_classes=4)
-    model.load_state_dict(torch.load("eye_disease_model_pytorch.pth", map_location=device))
+    """Load PyTorch model and preprocessing transforms safely"""
+
+    if not MODEL_PATH.exists():
+        st.error(f"❌ Model file not found at:\n{MODEL_PATH}")
+        st.stop()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = timm.create_model(
+        'mobilenetv3_large_100',
+        pretrained=False,
+        num_classes=4
+    )
+
+    model.load_state_dict(
+        torch.load(MODEL_PATH, map_location=device)
+    )
+
     model.to(device)
     model.eval()
-    
-    # Image preprocessing (ImageNet normalization for MobileNetV3)
+
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
     ])
-    
-    st.success(f"✅ Model loaded on {device}")
+
+    st.success(f"✅ Model loaded successfully on {device}")
+
     return model, transform, device
 
-# PyTorch Model Prediction
-def model_prediction(test_image_path):
-    """PyTorch model prediction function"""
-    global model, transform, device
-    
-    # Load and preprocess image
-    image = Image.open(test_image_path).convert('RGB')
+
+# -------------------- PREDICTION FUNCTION --------------------
+def model_prediction(image_path, model, transform, device):
+    image = Image.open(image_path).convert("RGB")
     image_tensor = transform(image).unsqueeze(0).to(device)
-    
-    # Predict
+
     with torch.no_grad():
         outputs = model(image_tensor)
-        probabilities = torch.nn.functional.softmax(outputs[0], dim=0)
+        probabilities = torch.softmax(outputs[0], dim=0)
         confidence, predicted = torch.max(probabilities, 0)
-    
+
     return predicted.item(), confidence.item(), probabilities.cpu().numpy()
 
-#Sidebar
-st.sidebar.title("Dashboard")
-app_mode = st.sidebar.selectbox("Select Page", ["Home", "About", "Disease Identification"])
 
-# Load model on first run
-if model is None:
-    load_model_and_transforms()
+# -------------------- SIDEBAR --------------------
+st.sidebar.title("Dashboard")
+app_mode = st.sidebar.selectbox(
+    "Select Page",
+    ["Home", "About", "Disease Identification"]
+)
+
+
+# -------------------- LOAD MODEL --------------------
+model, transform, device = load_model_and_transforms()
+
 
 #Main Page
 if app_mode == "Home":
@@ -198,12 +216,12 @@ elif app_mode == "Disease Identification":
                     
                     if result_index is not None:
                         # Display results
-                        st.success(f"**Predicted Disease:** {class_names[result_index].upper()}")
+                        st.success(f"**Predicted Disease:** {CLASS_NAMES[result_index].upper()}")
                         st.metric("Confidence", f"{confidence:.1%}")
                         
                         # Progress bars for all classes
                         st.subheader("📊 Prediction Probabilities")
-                        for i, class_name in enumerate(class_names):
+                        for i, class_name in enumerate(CLASS_NAMES):
                             col_prob1, col_prob2 = st.columns([3, 1])
                             with col_prob1:
                                 progress_bar = st.progress(float(probabilities[i]))  # Convert to Python float
@@ -236,7 +254,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: #808080; padding: 2rem 0;'>
-        <h3 style='color: #ff4757;'>Built with ❤️ using PyTorch <br/> Lovey dovey yooooo</h3>
+        <h3 style='color: #ff4757;'>Built with ⚡ using PyTorch</h3>
         <p>OCT Retinal Disease Classification</p>
         <small>PyTorch • TIMM • Streamlit • MobileNetV3 Large</small>
     </div>
