@@ -64,7 +64,8 @@ def load_model_and_transforms():
 
 
 # -------------------- PREDICTION FUNCTION --------------------
-def model_prediction(image_path, model, transform, device):
+def model_prediction(image_path):
+    model, transform, device = load_model_and_transforms()
     image = Image.open(image_path).convert("RGB")
     image_tensor = transform(image).unsqueeze(0).to(device)
 
